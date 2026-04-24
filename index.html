@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>배드애플 자바스크립트 아트 플레이어</title>
+    <style>
+        :root { 
+            --bg: #0f0f0f; 
+            --panel: rgba(255, 255, 255, 0.03); 
+            --text-main: #eeeeee; /* 초록색 대신 밝은 회색 계열 */
+            --text-dim: #666666;
+            --border: #333333;
+        }
+        body {
+            margin: 0; padding: 0; background-color: var(--bg); height: 100vh;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-family: 'Malgun Gothic', -apple-system, sans-serif; color: var(--text-main); overflow: hidden;
+        }
+        #myCanvas { 
+            max-width: 85vw; max-height: 65vh; 
+            background: #000; border: 1px solid var(--border); border-radius: 4px; 
+        }
+        #controls {
+            margin-top: 20px; width: 620px; max-width: 90vw;
+            background: var(--panel); padding: 20px; border-radius: 12px;
+            display: flex; flex-direction: column; gap: 15px; border: 1px solid rgba(255,255,255,0.05);
+        }
+        .progress-area { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-dim); }
+        input[type="range"] { flex-grow: 1; height: 3px; background: #222; -webkit-appearance: none; outline: none; }
+        input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: #888; border-radius: 50%; }
+        
+        .btn-group { display: flex; justify-content: space-between; align-items: center; }
+        .flex-row { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+
+        button { 
+            cursor: pointer; background: #1a1a1a; border: 1px solid var(--border); color: #aaa; 
+            padding: 7px 14px; border-radius: 4px; font-size: 12px; transition: 0.2s;
+        }
+        button:hover { background: #333; color: #fff; border-color: #555; }
+
+        /* 초록색(accent)을 제거하고 흰색/회색 톤으로 변경 */
+        input[type="text"], input[type="number"] { 
+            background: #050505; border: 1px solid var(--border); color: #fff; 
+            padding: 5px; border-radius: 4px; outline: none; text-align: center; 
+        }
+        
+        #toast { 
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%) translateY(100px); 
+            background: rgba(30, 30, 30, 0.95); color: #fff; padding: 12px 30px; border-radius: 4px; 
+            font-size: 13px; opacity: 0; transition: 0.3s ease; border: 1px solid var(--border); z-index: 100; 
+        }
+        #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+        
+        .hint { margin-top: 15px; font-size: 11px; color: #444; }
+        .copyright { margin-top: 8px; font-size: 10px; color: #222; }
+    </style>
+</head>
+<body>
+    <canvas id="myCanvas"></canvas>
+    <div id="controls">
+        <div class="progress-area">
+            <span id="currTime">0:00</span>
+            <input type="range" id="progressBar" value="0" step="0.1">
+            <span id="totalTime">0:00</span>
+        </div>
+        <div class="btn-group">
+            <div class="flex-row">
+                <label style="cursor:pointer; text-decoration:underline; font-size:12px; color: var(--text-dim);" for="imageInput">사진 업로드</label>
+                <input type="file" id="imageInput" accept="image/*" style="display:none;">
+                <button id="clearImgBtn">초기화</button>
+            </div>
+            <div class="flex-row">
+                <span>문자</span><input type="text" id="emojiInput" value="🍎" style="width:35px;">
+                <span>크기</span><input type="number" id="sizeInput" value="10" min="2" max="30" style="width:40px;">
+            </div>
+            <div class="flex-row">
+                <button id="playBtn" style="color:#fff; font-weight: bold;">재생/정지</button>
+                <button id="restartBtn">처음부터</button>
+                <button id="muteBtn">음소거</button>
+            </div>
+        </div>
+    </div>
+    <div id="toast"></div>
+    <div class="hint">스페이스바 : 재생 · M : 음소거 · R : 재시작</div>
+    <div class="copyright">© 2026 simsimman | Inspired by Radu Mariescu-Istodor</div>
+
+    <script>
+        // 자바스크립트 로직은 이전과 동일 (한글 지원 및 실시간 반영 포함)
+        const canvas = document.getElementById("myCanvas");
+        const ctx = canvas.getContext("2d", { willReadFrequently: true });
+        const video = document.createElement("video");
+        video.src = "vid.mp4"; 
+        video.muted = true; video.playsInline = true;
+
+        let customTexture = null, isAnimating = false, seeking = false, tHandle;
+
+        const notify = (t) => {
+            const el = document.getElementById('toast');
+            clearTimeout(tHandle);
+            el.innerText = t; el.classList.add('show');
+            tHandle = setTimeout(() => el.classList.remove('show'), 2000);
+        };
+
+        const ts = (v) => `${Math.floor(v/60)}:${Math.floor(v%60).toString().padStart(2, '0')}`;
+
+        const togglePlayback = () => {
+            if (video.paused) {
+                video.play().then(() => { if(!isAnimating) startLoop(); })
+                .catch(() => { video.muted = true; video.play(); });
+            } else { video.pause(); }
+        };
+
+        document.getElementById('imageInput').onchange = (e) => {
+            const f = e.target.files[0];
+            if (f) {
+                const r = new FileReader();
+                r.onload = (ev) => {
+                    const i = new Image();
+                    i.onload = () => { customTexture = i; notify("이미지 소스 적용됨"); };
+                    i.src = ev.target.result;
+                };
+                r.readAsDataURL(f);
+            }
+        };
+
+        document.getElementById('clearImgBtn').onclick = () => {
+            customTexture = null; document.getElementById('imageInput').value = "";
+            notify("문자 모드로 전환");
+        };
+
+        const pBar = document.getElementById('progressBar');
+        video.onloadedmetadata = () => {
+            pBar.max = video.duration;
+            document.getElementById('totalTime').innerText = ts(video.duration);
+            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+        };
+
+        video.ontimeupdate = () => {
+            if (!seeking) {
+                pBar.value = video.currentTime;
+                document.getElementById('currTime').innerText = ts(video.currentTime);
+            }
+        };
+
+        pBar.oninput = () => { seeking = true; document.getElementById('currTime').innerText = ts(pBar.value); };
+        pBar.onchange = () => { video.currentTime = pBar.value; seeking = false; };
+
+        document.getElementById('playBtn').onclick = togglePlayback;
+        document.getElementById('restartBtn').onclick = () => {
+            video.currentTime = 0; if (video.paused) togglePlayback();
+            notify("처음부터 재생");
+        };
+        document.getElementById('muteBtn').onclick = () => {
+            video.muted = !video.muted;
+            document.getElementById('muteBtn').innerText = video.muted ? "음소거" : "소리 켬";
+            notify(video.muted ? "음소거 활성" : "소리 활성");
+        };
+
+        window.onkeydown = (e) => {
+            if (e.code === "Space") { e.preventDefault(); togglePlayback(); }
+            if (e.key.toLowerCase() === "m") document.getElementById('muteBtn').click();
+            if (e.key.toLowerCase() === "r") document.getElementById('restartBtn').click();
+        };
+
+        const startLoop = () => {
+            isAnimating = true;
+            if (video.paused || video.ended) { isAnimating = false; return; }
+
+            const res = parseInt(document.getElementById('sizeInput').value) || 10;
+            const char = document.getElementById('emojiInput').value || " "; 
+
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+
+            ctx.fillStyle = "white";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = "black"; 
+            ctx.font = `${res}px Arial`; 
+            ctx.textAlign = "center"; 
+            ctx.textBaseline = "middle";
+
+            for (let y = 0; y < canvas.height; y += res) {
+                for (let x = 0; x < canvas.width; x += res) {
+                    const offset = (y * canvas.width + x) * 4;
+                    if (imgData[offset] < 128) {
+                        if (customTexture) ctx.drawImage(customTexture, x, y, res, res);
+                        else ctx.fillText(char, x + res/2, y + res/2);
+                    }
+                }
+            }
+            requestAnimationFrame(startLoop);
+        };
+    </script>
+</body>
+</html>
