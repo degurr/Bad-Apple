@@ -2,12 +2,12 @@
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
-    <title>배드애플 자바스크립트 아트 플레이어</title>
+    <title>배드애플 자바스크립트 아트 플레이어 (480x360)</title>
     <style>
         :root { 
             --bg: #0f0f0f; 
             --panel: rgba(255, 255, 255, 0.03); 
-            --text-main: #eeeeee; /* 초록색 대신 밝은 회색 계열 */
+            --text-main: #eeeeee; 
             --text-dim: #666666;
             --border: #333333;
         }
@@ -16,29 +16,53 @@
             display: flex; flex-direction: column; align-items: center; justify-content: center;
             font-family: 'Malgun Gothic', -apple-system, sans-serif; color: var(--text-main); overflow: hidden;
         }
+        
+        /* 480:360 비율 유지 컨테이너 */
+        .canvas-container {
+            width: 95vw;
+            max-width: calc(75vh * 480 / 360); 
+            aspect-ratio: 480 / 360; 
+            position: relative;
+            background: #000;
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.8);
+            overflow: hidden;
+        }
+
         #myCanvas { 
-            max-width: 85vw; max-height: 65vh; 
-            background: #000; border: 1px solid var(--border); border-radius: 4px; 
+            width: 100%;
+            height: 100%;
+            display: block;
+            image-rendering: pixelated; /* 픽셀 아트 느낌을 위해 보간 억제 */
         }
+
         #controls {
-            margin-top: 20px; width: 620px; max-width: 90vw;
-            background: var(--panel); padding: 20px; border-radius: 12px;
-            display: flex; flex-direction: column; gap: 15px; border: 1px solid rgba(255,255,255,0.05);
+            margin-top: 15px; 
+            width: 95vw; 
+            max-width: 600px; /* 해상도에 맞춰 컨트롤러 너비도 약간 줄임 */
+            background: var(--panel); 
+            padding: 15px 20px; 
+            border-radius: 12px; 
+            display: flex; 
+            flex-direction: column; 
+            gap: 15px; 
+            border: 1px solid rgba(255,255,255,0.05);
         }
+
         .progress-area { display: flex; align-items: center; gap: 12px; font-size: 12px; color: var(--text-dim); }
         input[type="range"] { flex-grow: 1; height: 3px; background: #222; -webkit-appearance: none; outline: none; }
         input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 12px; height: 12px; background: #888; border-radius: 50%; }
         
         .btn-group { display: flex; justify-content: space-between; align-items: center; }
-        .flex-row { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+        .flex-row { display: flex; align-items: center; gap: 10px; font-size: 13px; }
 
         button { 
             cursor: pointer; background: #1a1a1a; border: 1px solid var(--border); color: #aaa; 
-            padding: 7px 14px; border-radius: 4px; font-size: 12px; transition: 0.2s;
+            padding: 6px 12px; border-radius: 4px; font-size: 12px; transition: 0.2s;
         }
         button:hover { background: #333; color: #fff; border-color: #555; }
 
-        /* 초록색(accent)을 제거하고 흰색/회색 톤으로 변경 */
         input[type="text"], input[type="number"] { 
             background: #050505; border: 1px solid var(--border); color: #fff; 
             padding: 5px; border-radius: 4px; outline: none; text-align: center; 
@@ -56,7 +80,10 @@
     </style>
 </head>
 <body>
-    <canvas id="myCanvas"></canvas>
+    <div class="canvas-container">
+        <canvas id="myCanvas"></canvas>
+    </div>
+
     <div id="controls">
         <div class="progress-area">
             <span id="currTime">0:00</span>
@@ -70,8 +97,8 @@
                 <button id="clearImgBtn">초기화</button>
             </div>
             <div class="flex-row">
-                <span>문자</span><input type="text" id="emojiInput" value="🍎" style="width:35px;">
-                <span>크기</span><input type="number" id="sizeInput" value="10" min="2" max="30" style="width:40px;">
+                <span>문자</span><input type="text" id="emojiInput" value="🍎" style="width:30px;">
+                <span>크기</span><input type="number" id="sizeInput" value="8" min="2" max="30" style="width:35px;">
             </div>
             <div class="flex-row">
                 <button id="playBtn" style="color:#fff; font-weight: bold;">재생/정지</button>
@@ -85,7 +112,6 @@
     <div class="copyright">© 2026 simsimman | Inspired by Radu Mariescu-Istodor</div>
 
     <script>
-        // 자바스크립트 로직은 이전과 동일 (한글 지원 및 실시간 반영 포함)
         const canvas = document.getElementById("myCanvas");
         const ctx = canvas.getContext("2d", { willReadFrequently: true });
         const video = document.createElement("video");
@@ -116,7 +142,7 @@
                 const r = new FileReader();
                 r.onload = (ev) => {
                     const i = new Image();
-                    i.onload = () => { customTexture = i; notify("이미지 소스 적용됨"); };
+                    i.onload = () => { customTexture = i; notify("이미지 적용됨"); };
                     i.src = ev.target.result;
                 };
                 r.readAsDataURL(f);
@@ -124,15 +150,18 @@
         };
 
         document.getElementById('clearImgBtn').onclick = () => {
-            customTexture = null; document.getElementById('imageInput').value = "";
-            notify("문자 모드로 전환");
+            customTexture = null; document.getElementById('emojiInput').value = "🍎";
+            notify("기본 모드 복구");
         };
 
         const pBar = document.getElementById('progressBar');
         video.onloadedmetadata = () => {
             pBar.max = video.duration;
             document.getElementById('totalTime').innerText = ts(video.duration);
-            canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            
+            // 말씀하신 정확한 해상도로 설정
+            canvas.width = 480;
+            canvas.height = 360;
         };
 
         video.ontimeupdate = () => {
@@ -153,7 +182,7 @@
         document.getElementById('muteBtn').onclick = () => {
             video.muted = !video.muted;
             document.getElementById('muteBtn').innerText = video.muted ? "음소거" : "소리 켬";
-            notify(video.muted ? "음소거 활성" : "소리 활성");
+            notify(video.muted ? "음소거" : "소리 켬");
         };
 
         window.onkeydown = (e) => {
@@ -166,9 +195,10 @@
             isAnimating = true;
             if (video.paused || video.ended) { isAnimating = false; return; }
 
-            const res = parseInt(document.getElementById('sizeInput').value) || 10;
+            const res = parseInt(document.getElementById('sizeInput').value) || 8;
             const char = document.getElementById('emojiInput').value || " "; 
 
+            // 480x360 캔버스에 영상 드로잉
             ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
 
@@ -176,16 +206,20 @@
             ctx.fillRect(0, 0, canvas.width, canvas.height);
 
             ctx.fillStyle = "black"; 
-            ctx.font = `${res}px Arial`; 
+            ctx.font = `bold ${res * 1.15}px Arial, sans-serif`; 
             ctx.textAlign = "center"; 
             ctx.textBaseline = "middle";
 
             for (let y = 0; y < canvas.height; y += res) {
                 for (let x = 0; x < canvas.width; x += res) {
                     const offset = (y * canvas.width + x) * 4;
+                    // Red 채널 기준으로 밝기 분석
                     if (imgData[offset] < 128) {
-                        if (customTexture) ctx.drawImage(customTexture, x, y, res, res);
-                        else ctx.fillText(char, x + res/2, y + res/2);
+                        if (customTexture) {
+                            ctx.drawImage(customTexture, x, y, res, res);
+                        } else {
+                            ctx.fillText(char, x + res/2, y + res/2);
+                        }
                     }
                 }
             }
